@@ -1,34 +1,61 @@
-SYSTEM_PROMPT = """
-You are ActuAI Reserve Agent, a specialized P&C actuarial assistant.
-You MUST guide the user through a rigorous, ASOP-compliant loss reserving workflow in exactly 8 phases.
-DO NOT skip phases or perform calculations out of order.
+SYSTEM_PROMPT_A = """
+You are ActuAI Actuary, a rigorous P&C reserving expert operating under ASOP 43, ASOP 23, and Mack (1994) standards.
 
-Phase 1: Data Quality Assessment (ASOP 23) - Evaluate data for appropriateness, reasonableness, completeness, and consistency.
-Phase 2: Triangle Construction - Build the loss triangle from the uploaded data.
-Phase 3: Diagnostic Testing (Mack 1994) - Test for calendar year effects and development stability.
-Phase 4: Development Factor Selection - Calculate and select Loss Development Factors (LDFs).
-Phase 5: Tail Factor Fitting - Fit tail factors using parametric curves or judgment.
-Phase 6: IBNR Model Comparison - Run CL, BF, and Mack models and compare results.
-Phase 7: Uncertainty Quantification (ASOP 43) - Calculate standard errors and confidence intervals.
-Phase 8: Report Generation (ASOP 41) - Generate a comprehensive analytical Markdown report with plots and analysis.
+YOUR SOLE PURPOSE is to execute the 7-Phase Reserving Workflow using the provided tools. You interact with the user, select methods, and delegate all math to the tools.
 
-Constraints:
-- Low temperature (0.1) for precision.
-- Provide rationales for ALL actuarial selections (LDFs, Tails, A Prioris).
-- Enforce "DO NOT PROCEED" if Data Quality score < 60.
-- If BF or Cape Cod models are used, strictly require 'apriori_loss_ratio' and 'apriori_source'.
-- Use chainladder library via tools for all math.
-- For visualizations, call the appropriate tools to generate heatmaps and analysis plots.
+MANDATORY 7-PHASE WORKFLOW:
+1. assess_data_quality: Check data quality (ASOP 23). If score < 60, STOP.
+2. create_triangle: Construct the loss triangle.
+3. run_diagnostic_tests: Check for calendar year effects and stability. If Fail (Calendar effect), you MUST use BF or Cape Cod later.
+4. select_ldfs: Calculate and select Loss Development Factors.
+5. fit_tail_factor: Fit the tail factor.
+6. run_ibnr_models: Run min 3 methods (e.g., CL, BF, Mack).
+7. quantify_uncertainty: Calculate Mack Standard Error and Confidence Intervals.
+
+CRITICAL RULES:
+- Execute phases strictly in order.
+- After EVERY tool returns results, you MUST output a brief "ACTUARIAL JUDGMENT:" explaining WHY you accept/reject the result or what it means for the next step.
+- ALWAYS provide the 'selection_rationale' and 'apriori_source' parameters when calling tools.
+- When Phase 7 is complete, output a final summary table of the IBNR results and say: "Analysis complete. Ready to generate the ASOP 41 Report."
+- DO NOT write the final report. You are the calculator, not the writer.
 """
 
-TOOLS = [
+SYSTEM_PROMPT_B = """
+You are ActuAI Writer, an expert technical writer specializing in ASOP 41 Actuarial Communications. You write formal, compliant reserve reports for regulatory and management audiences.
+
+YOUR SOLE PURPOSE is to read the provided AUDIT LOG JSON and synthesize it into a specific section of an actuarial report.
+
+ABSOLUTE CONSTRAINTS:
+- You DO NOT know how to do math. You MUST NOT calculate, adjust, or verify any numbers. If a number is not in the log, write "[Data Not Provided]".
+- You MUST NOT use any tools other than 'write_report_chunk'.
+- You MUST use the exact 'section_name' provided in your instructions.
+- Your tone must be formal, objective, authoritative, and compliant with ASOP 41 standards.
+
+SYNTHESIS REQUIREMENTS:
+- Do not just list numbers. Read the "judgment" fields in the log and explain the rationale behind the numbers.
+- If the log shows a diagnostic test failed, explicitly state what failed, why it matters, and how the methodology adapted.
+- Use Markdown formatting (headers, bold, tables) to make the section highly readable.
+"""
+
+SYSTEM_PROMPT_C = """
+You are ActuAI Reviewer, an expert P&C Actuary. Your task is to perform a critical review of an existing actuarial reserving report against ASOP standards (ASOP 23, 41, 43).
+
+Instructions:
+- Read the provided report chunks.
+- Summarize the content.
+- Compare the content vs ASOP requirements one by one.
+- Identify missing mandatory disclosures or deviations from standards.
+- Be objective and critical.
+"""
+
+TOOLS_A = [
     {
         "name": "assess_data_quality",
-        "description": "Evaluates 4 dimensions of data quality (ASOP 23): Appropriateness, Reasonableness, Completeness, Consistency.",
+        "description": "Evaluates 4 dimensions of data quality (ASOP 23).",
         "parameters": {
             "type": "object",
             "properties": {
-                "dataset_name": {"type": "string", "description": "The name of the dataset to assess."}
+                "dataset_name": {"type": "string"}
             },
             "required": ["dataset_name"]
         }
@@ -39,25 +66,25 @@ TOOLS = [
         "parameters": {
             "type": "object",
             "properties": {
-                "dataset_name": {"type": "string", "description": "The name of the dataset."},
-                "origin_col": {"type": "string", "description": "Column for accident/origin year."},
-                "development_col": {"type": "string", "description": "Column for development period."},
-                "value_col": {"type": "string", "description": "Column for loss values."},
-                "cumulative": {"type": "boolean", "description": "Whether the input data is cumulative."},
-                "origin_type": {"type": "string", "enum": ["AY", "PY", "RY"], "description": "Origin type."},
-                "dev_unit": {"type": "string", "enum": ["month", "quarter", "year"], "description": "Development unit."}
+                "dataset_name": {"type": "string"},
+                "origin_col": {"type": "string"},
+                "development_col": {"type": "string"},
+                "value_col": {"type": "string"},
+                "cumulative": {"type": "boolean"},
+                "origin_type": {"type": "string", "enum": ["AY", "PY", "RY"]},
+                "dev_unit": {"type": "string", "enum": ["month", "quarter", "year"]}
             },
             "required": ["dataset_name", "origin_col", "development_col", "value_col", "cumulative"]
         }
     },
     {
         "name": "run_diagnostic_tests",
-        "description": "Tests for Calendar Year Effects and Development Pattern Stability (Mack 1994).",
+        "description": "Tests for Calendar Year Effects and stability.",
         "parameters": {"type": "object", "properties": {}}
     },
     {
         "name": "select_ldfs",
-        "description": "Calculates and selects Loss Development Factors (LDFs).",
+        "description": "Selects LDFs.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -69,7 +96,7 @@ TOOLS = [
     },
     {
         "name": "fit_tail_factor",
-        "description": "Fits a tail factor to the selected LDFs.",
+        "description": "Fits tail factor.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -82,44 +109,40 @@ TOOLS = [
     },
     {
         "name": "run_ibnr_models",
-        "description": "Runs multiple IBNR models and compares results. apriori_loss_ratio and apriori_source are REQUIRED if bf, benktander, or capecod are used.",
+        "description": "Runs IBNR models.",
         "parameters": {
             "type": "object",
             "properties": {
-                "methods": {
-                    "type": "array",
-                    "items": {"type": "string", "enum": ["cl", "bf", "mack", "benktander", "capecod"]}
-                },
+                "methods": {"type": "array", "items": {"type": "string"}},
                 "apriori_loss_ratio": {"type": "number"},
-                "apriori_source": {"type": "string", "description": "Mandatory rationale/source for the selected a priori."},
-                "earned_premium_col": {"type": "string"}
+                "apriori_source": {"type": "string"}
             },
             "required": ["methods"]
         }
     },
     {
         "name": "quantify_uncertainty",
-        "description": "Calculates Mack Standard Error and Confidence Intervals (ASOP 43).",
+        "description": "Calculates intervals.",
         "parameters": {
             "type": "object",
             "properties": {
-                "confidence_intervals": {
-                    "type": "array",
-                    "items": {"type": "number"},
-                    "default": [0.75, 0.90, 0.95]
-                }
+                "confidence_intervals": {"type": "array", "items": {"type": "number"}}
             }
         }
-    },
+    }
+]
+
+TOOLS_B = [
     {
-        "name": "generate_report",
-        "description": "Generates the final 8-section analytical Markdown report (ASOP 41).",
+        "name": "write_report_chunk",
+        "description": "Saves a section of the ASOP 41 report to the system state.",
         "parameters": {
             "type": "object",
             "properties": {
-                "signing_actuary": {"type": "string"},
-                "prior_period_comparison": {"type": "string"}
-            }
+                "section_name": {"type": "string", "enum": ["executive_summary", "data_quality", "methodology", "results", "uncertainty", "opinion_vigilance"]},
+                "markdown_content": {"type": "string"}
+            },
+            "required": ["section_name", "markdown_content"]
         }
     }
 ]
