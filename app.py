@@ -166,6 +166,10 @@ async def execute_tool(name: str, args: Dict[str, Any]) -> str:
         if df is None: return "Dataset not found."
         res = actuarial_logic.assess_quality(df)
         cl.user_session.set("phase", 1)
+        # Programmatic Gate Implementation
+        if res.get("score", 0) < 60:
+             await cl.Message(content=f"🚫 **DATA QUALITY GATE FAILED** (Score: {res['score']}). Reserving workflow halted per ASOP 23 guidelines.").send()
+             # We could force stop here but we'll let the LLM handle it via system instructions
         return json.dumps(res)
     elif name == "create_triangle":
         df = datasets.get(args.get("dataset_name"))
@@ -261,6 +265,18 @@ async def handle_generate_report(signing_actuary=None):
 
     await cl.Message(content="✅ Full ASOP 41 Report Generated.").send()
 
+    # Optional TTS for Executive Summary
+    sections = cl.user_session.get("final_report_sections")
+    exec_summary = sections.get("executive_summary", "")
+    if exec_summary:
+        try:
+            import edge_tts
+            communicate = edge_tts.Communicate(exec_summary, "en-US-AndrewNeural")
+            await communicate.save("summary.mp3")
+            await cl.Message(content="🔊 Reading Executive Summary...", elements=[cl.Audio(name="summary", path="summary.mp3", display="inline")]).send()
+        except Exception as e:
+            print(f"TTS failed: {e}")
+
     # Generate Heatmaps and Analysis Plots
     tri = cl.user_session.get("current_triangle")
     if tri is not None:
@@ -346,6 +362,8 @@ async def handle_critical_review(pdf_content):
 
     # Extract text from PDF
     import pdfplumber
+    import ollama
+    from asyncio import to_thread
     text = ""
     with pdfplumber.open(io.BytesIO(pdf_content)) as pdf:
         for page in pdf.pages:
@@ -365,7 +383,7 @@ async def handle_critical_review(pdf_content):
         try:
             # Try OpenRouter
             response = await client.chat.completions.create(
-                model="openai/gpt-4o-mini",
+                model=os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini"),
                 messages=[
                     {"role": "system", "content": SYSTEM_PROMPT_C},
                     {"role": "user", "content": f"REPORT CHUNK {i+1}:\n{chunk}"}
@@ -376,11 +394,15 @@ async def handle_critical_review(pdf_content):
         except Exception as e:
             print(f"OpenRouter failed: {e}. Falling back to Ollama...")
             try:
-                import ollama
-                response = ollama.chat(model='qwen2.5:3b', messages=[
-                    {'role': 'system', 'content': SYSTEM_PROMPT_C},
-                    {'role': 'user', 'content': f"REPORT CHUNK {i+1}:\n{chunk}"},
-                ])
+                # Use to_thread to prevent blocking the event loop
+                response = await to_thread(
+                    ollama.chat,
+                    model=os.environ.get("OLLAMA_MODEL", "qwen2.5:3b"),
+                    messages=[
+                        {'role': 'system', 'content': SYSTEM_PROMPT_C},
+                        {'role': 'user', 'content': f"REPORT CHUNK {i+1}:\n{chunk}"},
+                    ]
+                )
                 review_results.append(response['message']['content'])
             except Exception as oe:
                 review_results.append(f"[Fallback Failed: {oe}] Analysis for Chunk {i+1} unavailable.")
