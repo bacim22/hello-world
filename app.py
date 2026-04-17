@@ -48,14 +48,29 @@ async def main(message: cl.Message):
 
 async def run_llm_loop():
     history = cl.user_session.get("history")
+
+    # Provider Fallback Logic
+    primary_model = "gpt-4o"
+    secondary_model = "gpt-3.5-turbo" # Mocking secondary fallback
+
     try:
-        response = await client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "system", "content": SYSTEM_PROMPT}] + history,
-            tools=[{"type": "function", "function": t} for t in TOOLS],
-            tool_choice="auto",
-            temperature=0.1
-        )
+        try:
+            response = await client.chat.completions.create(
+                model=primary_model,
+                messages=[{"role": "system", "content": SYSTEM_PROMPT}] + history,
+                tools=[{"type": "function", "function": t} for t in TOOLS],
+                tool_choice="auto",
+                temperature=0.1
+            )
+        except Exception as e:
+            print(f"Primary model failed: {e}. Falling back...")
+            response = await client.chat.completions.create(
+                model=secondary_model,
+                messages=[{"role": "system", "content": SYSTEM_PROMPT}] + history,
+                tools=[{"type": "function", "function": t} for t in TOOLS],
+                tool_choice="auto",
+                temperature=0.1
+            )
         response_message = response.choices[0].message
         content = response_message.content
         tool_calls = response_message.tool_calls
@@ -157,6 +172,7 @@ This analysis is intended to provide a loss reserving estimate for the provided 
 ## 3. Data & Methodology (ASOP 23)
 Methods deployed: {', '.join([k for k in ibnr_res.keys() if k not in ['central_estimate', 'range']]) if ibnr_res else 'N/A'}.
 A prioris used: {args.get('apriori_loss_ratio', 'N/A')}.
+Prior period comparison: {args.get('prior_period_comparison', 'None provided')}.
 
 ## 4. Results & Method Comparison
 | Method | IBNR | Ultimate |
@@ -213,6 +229,19 @@ A prioris used: {args.get('apriori_loss_ratio', 'N/A')}.
         await cl.Message(content="Incremental Triangle Heatmap:", elements=[cl.Image(name="inc_heatmap", content=buf.read(), display="inline")]).send()
         plt.close(fig)
 
+        # Age-to-Age LDF Heatmap
+        if hasattr(tri, 'link_ratio'):
+            fig, ax = plt.subplots(figsize=(10, 6))
+            ax.set_title("Age-to-Age LDF Heatmap")
+            lrs = tri.link_ratio
+            im = ax.imshow(lrs.values[0,0,:,:], cmap='YlGnBu')
+            fig.colorbar(im)
+            buf = io.BytesIO()
+            plt.savefig(buf, format='png')
+            buf.seek(0)
+            await cl.Message(content="Age-to-Age LDF Heatmap:", elements=[cl.Image(name="ldf_heatmap", content=buf.read(), display="inline")]).send()
+            plt.close(fig)
+
         # LDF Analysis Plot
         if hasattr(tri, 'link_ratio'):
             fig, ax = plt.subplots(figsize=(10, 6))
@@ -233,11 +262,15 @@ A prioris used: {args.get('apriori_loss_ratio', 'N/A')}.
 async def handle_file_upload(file):
     datasets = cl.user_session.get("datasets")
     content = open(file.path, "rb").read()
-    if file.name.endswith(".csv"): df = data_utils.parse_csv(content)
-    elif file.name.endswith(".xlsx"):
+    df = None
+    if file.name.endswith(".csv"):
+        df = data_utils.parse_csv(content)
+    elif file.name.endswith(".xlsx") or file.name.endswith(".xls"):
         sheets = data_utils.parse_excel(content)
         for s, d in sheets.items(): datasets[f"{file.name}_{s}"] = data_utils.clean_dataframe(d)
-        df = None
+    elif file.name.endswith(".pdf"):
+        df = data_utils.parse_pdf(content)
+
     if df is not None: datasets[file.name] = data_utils.clean_dataframe(df)
     cl.user_session.set("datasets", datasets)
     await cl.Message(content=f"Loaded {file.name}").send()

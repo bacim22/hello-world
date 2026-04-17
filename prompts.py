@@ -82,7 +82,7 @@ TOOLS = [
     },
     {
         "name": "run_ibnr_models",
-        "description": "Runs multiple IBNR models and compares results.",
+        "description": "Runs multiple IBNR models and compares results. apriori_loss_ratio and apriori_source are REQUIRED if bf, benktander, or capecod are used.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -91,7 +91,7 @@ TOOLS = [
                     "items": {"type": "string", "enum": ["cl", "bf", "mack", "benktander", "capecod"]}
                 },
                 "apriori_loss_ratio": {"type": "number"},
-                "apriori_source": {"type": "string"},
+                "apriori_source": {"type": "string", "description": "Mandatory rationale/source for the selected a priori."},
                 "earned_premium_col": {"type": "string"}
             },
             "required": ["methods"]

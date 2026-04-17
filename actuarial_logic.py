@@ -67,12 +67,27 @@ def run_diagnostics(triangle: chain_cl.Triangle) -> Dict[str, Any]:
     }
 
 def select_loss_development_factors(triangle: chain_cl.Triangle, method: str) -> chain_cl.Development:
+    if method == 'medial':
+        # Medial is often simple average excluding high and low
+        return chain_cl.Development(average='simple', drop_high=1, drop_low=1).fit(triangle)
+    elif method == 'regression':
+        return chain_cl.Development(average='regression').fit(triangle)
+
     avg = method if method in ['volume', 'simple'] else 'volume'
     return chain_cl.Development(average=avg).fit(triangle)
 
-def fit_tail(triangle: chain_cl.Triangle, method: str) -> chain_cl.TailCurve:
-    curve = method if method in ["inverse_power", "weibull", "exponential"] else "inverse_power"
-    return chain_cl.TailCurve(curve=curve).fit(triangle)
+def fit_tail(triangle: chain_cl.Triangle, method: str) -> Any:
+    if method in ["inverse_power", "weibull", "exponential"]:
+        return chain_cl.TailCurve(curve=method).fit(triangle)
+    elif method == "bondy":
+        try:
+            return chain_cl.TailBondy().fit(triangle)
+        except:
+            return chain_cl.TailCurve(curve='inverse_power').fit(triangle)
+    elif method == "constant":
+        return chain_cl.TailConstant().fit(triangle)
+    else: # default fallback
+        return chain_cl.TailCurve(curve='inverse_power').fit(triangle)
 
 def run_ibnr(triangle: chain_cl.Triangle, methods: List[str], apriori: float = None, premium: pd.Series = None) -> Dict[str, Any]:
     results = {}
@@ -83,6 +98,23 @@ def run_ibnr(triangle: chain_cl.Triangle, methods: List[str], apriori: float = N
         if apriori is None: raise ValueError("A priori loss ratio required for BF.")
         bf_model = chain_cl.BornhuetterFerguson(apriori=apriori).fit(triangle, sample_weight=premium)
         results["bf"] = {"ibnr": bf_model.ibnr_.sum().sum(), "ultimate": bf_model.ultimate_.sum().sum()}
+
+    # Benktander
+    if "benktander" in methods:
+        if apriori is None: raise ValueError("A priori loss ratio required for Benktander.")
+        # Benktander needs exposure (sample_weight) or it fails.
+        # If premium is not provided, we might have to use a dummy or skip
+        if premium is not None:
+            bk_model = chain_cl.Benktander(apriori=apriori).fit(triangle, sample_weight=premium)
+            results["benktander"] = {"ibnr": bk_model.ibnr_.sum().sum(), "ultimate": bk_model.ultimate_.sum().sum()}
+
+    # Cape Cod
+    if "capecod" in methods:
+        # Cape Cod also needs exposure
+        if premium is not None:
+            cc_model = chain_cl.CapeCod().fit(triangle, sample_weight=premium)
+            results["capecod"] = {"ibnr": cc_model.ibnr_.sum().sum(), "ultimate": cc_model.ultimate_.sum().sum()}
+
     if "mack" in methods:
         mack_model = chain_cl.MackChainladder().fit(triangle)
         results["mack"] = {

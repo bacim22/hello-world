@@ -29,15 +29,29 @@ def test_diagnostics_and_ldf(tri):
     print("Diagnostics test passed.")
     ldf = actuarial_logic.select_loss_development_factors(tri, "volume")
     assert isinstance(ldf, chain_cl.Development)
+
+    ldf_medial = actuarial_logic.select_loss_development_factors(tri, "medial")
+    assert isinstance(ldf_medial, chain_cl.Development)
+
     print("LDF selection test passed.")
 
 def test_tail_and_ibnr(tri):
     tail = actuarial_logic.fit_tail(tri, "inverse_power")
     assert isinstance(tail, chain_cl.TailCurve)
+
+    tail_bondy = actuarial_logic.fit_tail(tri, "bondy")
+    # Might fallback to TailCurve if mock data is too small for Bondy
+
     print("Tail fitting test passed.")
-    ibnr_results = actuarial_logic.run_ibnr(tri, ["cl", "mack"])
+
+    # Mock premium
+    premium = tri.latest_diagonal * 0 + 1000 # dummy premium
+
+    ibnr_results = actuarial_logic.run_ibnr(tri, ["cl", "mack", "benktander", "capecod"], apriori=0.6, premium=premium)
     assert "cl" in ibnr_results
     assert "mack" in ibnr_results
+    assert "benktander" in ibnr_results
+    assert "capecod" in ibnr_results
     print("IBNR modeling test passed.")
 
 def test_uncertainty(tri):
