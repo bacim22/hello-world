@@ -1,0 +1,12 @@
+chainlit
+chainladder
+pandas
+numpy
+scipy
+matplotlib
+pdfplumber
+openai
+ollama
+openpyxl
+python-dotenv
+edge-tts
