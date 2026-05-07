@@ -1,0 +1,32 @@
+{
+  "companyName": "Acme Actuarial Services",
+  "reportTitle": "Quarterly Financial Reserve Report",
+  "periodEnding": "December 31, 2024",
+  "keyMetrics": [
+    { "label": "Total IBNR", "value": "$1,240,000", "change": "+5.2%" },
+    { "label": "Ultimate Loss", "value": "$8,500,000", "change": "-1.1%" },
+    { "label": "Loss Ratio", "value": "68.5%", "change": "+2.0%" }
+  ],
+  "triangles": {
+    "labels": ["12", "24", "36", "48", "60"],
+    "data": [
+      [100, 150, 180, 200, 210],
+      [110, 165, 195, 220],
+      [120, 180, 215],
+      [130, 195],
+      [140]
+    ]
+  },
+  "methods": [
+    { "name": "Chain-ladder", "estimate": "$1,200,000" },
+    { "name": "Bornhuetter-Ferguson", "estimate": "$1,250,000" },
+    { "name": "Mack", "estimate": "$1,230,000" },
+    { "name": "Benktander", "estimate": "$1,245,000" },
+    { "name": "Cape Cod", "estimate": "$1,235,000" }
+  ],
+  "auditLogHighlights": [
+    "ACTUARIAL JUDGMENT: Applied 1.2x tail factor due to market volatility.",
+    "ACTUARIAL JUDGMENT: Selected volume-weighted LDFs for the 2022-2024 period.",
+    "ASOP 41 Compliance: All disclosures verified."
+  ]
+}
